@@ -1,10 +1,10 @@
 // Keeps the app shell cached so it opens offline or on a slow connection.
 // Exchange-rate requests are not touched; they always go to the network.
-const CACHE = "mcc-shell-v2";
+const CACHE = "mcc-shell-v3";
 const SHELL = [
   "./",
   "index.html",
-  "manifest.json",
+  "manifest.webmanifest",
   "icon-192.png",
   "icon-512.png",
   "icon-maskable-192.png",
@@ -33,7 +33,8 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== location.origin) return;
 
   const network = caches.open(CACHE).then((cache) =>
-    fetch(e.request).then((res) => {
+    // Pages always check for a newer copy, so updates show up on the next open.
+    fetch(e.request.mode === "navigate" ? new Request(e.request, { cache: "no-cache" }) : e.request).then((res) => {
       if (res.ok) cache.put(e.request, res.clone());
       return res;
     })
