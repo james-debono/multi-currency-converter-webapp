@@ -1,6 +1,6 @@
 // Keeps the app shell cached so it opens offline or on a slow connection.
 // Exchange-rate requests are not touched; they always go to the network.
-const CACHE = "mcc-shell-v3";
+const CACHE = "mcc-shell-v4";
 const SHELL = [
   "./",
   "index.html",

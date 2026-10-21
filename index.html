@@ -85,6 +85,19 @@ button:focus-visible, a:focus-visible, .cur:focus-visible, .opt:focus-visible { 
 .icon-btn.spin svg { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* In-app install card, shown only when Chrome says the app can be installed */
+.install {
+  display: flex; align-items: center; gap: 12px; margin: 0 0 16px; padding: 12px 12px 12px 14px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--raised);
+}
+.install img { flex: 0 0 auto; border-radius: 10px; }
+.install-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; font-size: .875rem; color: var(--muted); }
+.install-text strong { color: var(--fg); font-weight: 500; font-size: .95rem; }
+.install-btn {
+  flex: 0 0 auto; min-height: 40px; padding: 0 18px; border: 0; border-radius: 20px;
+  background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 500; cursor: pointer;
+}
+
 /* Currency rows */
 .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .row { position: relative; border-radius: 12px; }
@@ -217,6 +230,12 @@ html.is-dragging, html.is-dragging * { cursor: grabbing !important; user-select:
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
     </button>
   </header>
+
+  <div class="install" id="install" hidden>
+    <img src="icon-192.png" alt="" width="40" height="40">
+    <div class="install-text"><strong>Install the app</strong><span>Adds Multi-currency Converter to your phone.</span></div>
+    <button type="button" class="install-btn" id="installBtn">Install</button>
+  </div>
 
   <ul class="list" id="list" aria-label="Your currencies"></ul>
   <p class="empty" id="empty" hidden>Add the currencies you use. Type an amount in any one and the others convert.</p>
@@ -946,6 +965,31 @@ html.is-dragging, html.is-dragging * { cursor: grabbing !important; user-select:
     if (document.visibilityState === "visible" && (!rates || Date.now() - (rates.fetchedAt || 0) > REFRESH_AFTER_MS)) refresh();
   });
   window.addEventListener("online", refresh);
+
+  // ---------- Install button ----------
+  // Chrome fires beforeinstallprompt when the app can be installed. Keep it and offer our own button,
+  // so installing doesn't depend on the browser menu or a one-time prompt.
+  var installEl = $("install"), installBtn = $("installBtn"), installPrompt = null;
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    installPrompt = e;
+    installEl.hidden = false;
+  });
+  installBtn.addEventListener("click", function () {
+    var p = installPrompt;
+    if (!p) return;
+    installPrompt = null;
+    installEl.hidden = true;
+    try {
+      p.prompt();
+      if (p.userChoice) p.userChoice.catch(function () {});
+    } catch (e) {}
+  });
+  window.addEventListener("appinstalled", function () {
+    installPrompt = null;
+    installEl.hidden = true;
+    showToast("Installed. Look for Multi-currency Converter in your apps.");
+  });
 
   // ---------- Start ----------
   renderList();
