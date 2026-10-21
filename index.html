@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dong Dollar Converter</title>
+<meta name="description" content="Convert between VND, USD, AUD and EUR with live rates.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+:root {
+  --bg: #ffffff; --fg: #1f1f1f; --muted: #5e5e5e; --line: #c7c7c7;
+  --focus: #0b57d0; --warn: #b3261e;
+  --font: "Google Sans", Roboto, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1f1f1f; --fg: #e3e3e3; --muted: #a8a8a8; --line: #5e5e5e; --focus: #a8c7fa; --warn: #f2b8b5; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); }
+body {
+  font-family: var(--font);
+  padding-top: max(24px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.eq { font-size: 1.15rem; color: var(--muted); }
+.big { font-size: 2.6rem; line-height: 1.15; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.big .unit { font-size: 1.6rem; }
+.subs { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 6px; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.meta { font-size: .9rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.meta.err #status { color: var(--warn); }
+#refresh {
+  font: inherit; font-size: .9rem; color: var(--focus); background: none; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
+}
+#refresh:disabled { opacity: .55; cursor: default; }
+#refresh:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.fields { display: flex; flex-direction: column; gap: 12px; }
+.field { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 10px; min-height: 62px; }
+.field:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.field input {
+  flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--fg);
+  font-family: Roboto, system-ui, -apple-system, sans-serif; font-size: 1.55rem; padding: 0 16px; outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.field .clear { flex: 0 0 auto; border: 0; background: none; color: var(--muted); font-size: 1.3rem; width: 40px; cursor: pointer; }
+.field .clear:focus-visible { outline: 2px solid var(--focus); border-radius: 6px; }
+.field .cur {
+  flex: 0 0 7.5rem; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  border-left: 1px solid var(--line); margin: 12px 0; font-size: 1.05rem; white-space: nowrap;
+}
+.field .cur .code { font-weight: 500; }
+.field .cur .name { color: var(--muted); font-size: .95rem; }
+.foot { font-size: .8rem; color: var(--muted); }
+.foot a { color: var(--focus); }
+@media (max-width: 400px) {
+  .field .cur { flex-basis: auto; }
+  .field .cur .name { display: none; }
+  .big { font-size: 2.2rem; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <div class="eq">1 United States Dollar equals</div>
+    <div class="big"><span id="hVND">…</span> <span class="unit">Vietnamese Dong</span></div>
+    <div class="subs"><span><span id="hAUD">…</span> AUD</span><span><span id="hEUR">…</span> EUR</span></div>
+  </div>
+  <div class="meta" id="meta">
+    <span id="status">Loading rates…</span>
+    <button type="button" id="refresh">Refresh rates</button>
+  </div>
+  <div class="fields" id="fields"></div>
+  <div class="foot">Mid-market rates from <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">ExchangeRate-API</a>, updated daily. Banks and money changers charge a spread on top.</div>
+</div>
+
+<script>
+(function () {
+  var CURRENCIES = [
+    { code: "VND", name: "Dong",          dec: 0 },
+    { code: "USD", name: "US Dollar",     dec: 2 },
+    { code: "AUD", name: "Aussie Dollar", dec: 2 },
+    { code: "EUR", name: "Euro",          dec: 2 }
+  ];
+  // Fallback only, used if the device has never loaded live rates.
+  var FALLBACK = { rates: { USD: 1, VND: 25880, AUD: 1.44, EUR: 0.8894 }, updated: Date.parse("2026-10-17T00:00:00Z"), source: "built-in" };
+  var KEY = "fx-rates-v1";
+  var state = FALLBACK;
+  try { var s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && s.rates && s.rates.VND) state = s; } catch (e) {}
+
+  var inputs = {}, lastSource = "USD", lastUsd = 100;
+  var fieldsEl = document.getElementById("fields");
+
+  function parse(str) { var n = parseFloat(String(str).replace(/[^0-9.\-]/g, "")); return isFinite(n) ? n : null; }
+  function fmt(n, d) { return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function fmtRate(n) { return n.toLocaleString("en-US", { maximumFractionDigits: n >= 100 ? 0 : 4 }); }
+
+  CURRENCIES.forEach(function (c) {
+    var f = document.createElement("div");
+    f.className = "field";
+    f.innerHTML = '<input id="amt' + c.code + '" inputmode="decimal" autocomplete="off" aria-label="Amount in ' + c.code + '">' +
+      '<button class="clear" type="button" aria-label="Clear all">×</button>' +
+      '<div class="cur"><span class="code">' + c.code + '</span><span class="name">' + c.name + '</span></div>';
+    fieldsEl.appendChild(f);
+    var input = f.querySelector("input");
+    inputs[c.code] = input;
+    input.addEventListener("input", function () {
+      var v = parse(input.value);
+      lastSource = c.code;
+      lastUsd = v === null ? null : v / state.rates[c.code];
+      render(c.code);
+    });
+    input.addEventListener("blur", function () { var v = parse(input.value); if (v !== null) input.value = fmt(v, c.dec); });
+    input.addEventListener("focus", function () { setTimeout(function () { try { input.select(); } catch (e) {} }, 0); });
+    f.querySelector(".clear").addEventListener("click", function () {
+      lastUsd = null;
+      CURRENCIES.forEach(function (x) { inputs[x.code].value = ""; });
+      input.focus();
+    });
+  });
+
+  function render(skip) {
+    CURRENCIES.forEach(function (c) {
+      if (c.code === skip) return;
+      inputs[c.code].value = lastUsd === null ? "" : fmt(lastUsd * state.rates[c.code], c.dec);
+    });
+  }
+  function header() {
+    ["VND", "AUD", "EUR"].forEach(function (k) { document.getElementById("h" + k).textContent = fmtRate(state.rates[k]); });
+  }
+  function when(ts) {
+    return new Date(ts).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  }
+  function setStatus(text, isErr) {
+    document.getElementById("status").textContent = text;
+    document.getElementById("meta").classList.toggle("err", !!isErr);
+  }
+  function apply(next) {
+    state = next;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    header();
+    render(lastSource);
+  }
+
+  // Two free, keyless sources. The second is used if the first fails.
+  function fromErApi() {
+    return fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (j) {
+        if (j.result !== "success") throw new Error("bad result");
+        return { rates: { USD: 1, VND: j.rates.VND, AUD: j.rates.AUD, EUR: j.rates.EUR }, updated: j.time_last_update_unix * 1000, source: "ExchangeRate-API" };
+      });
+  }
+  function fromCurrencyApi() {
+    return fetch("https://latest.currency-api.pages.dev/v1/currencies/usd.json", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (j) {
+        return { rates: { USD: 1, VND: j.usd.vnd, AUD: j.usd.aud, EUR: j.usd.eur }, updated: Date.parse(j.date + "T00:00:00Z"), source: "Currency API" };
+      });
+  }
+
+  var btn = document.getElementById("refresh");
+  function refresh() {
+    btn.disabled = true;
+    setStatus("Updating rates…");
+    fromErApi().catch(fromCurrencyApi).then(function (next) {
+      if (!(next.rates.VND > 0 && next.rates.AUD > 0 && next.rates.EUR > 0)) throw new Error("missing rates");
+      next.fetchedAt = Date.now();
+      apply(next);
+      setStatus("Rates updated " + when(next.updated));
+    }).catch(function () {
+      setStatus("Couldn't update. Using rates from " + when(state.updated), true);
+    }).then(function () { btn.disabled = false; });
+  }
+  btn.addEventListener("click", refresh);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && Date.now() - (state.fetchedAt || 0) > 30 * 60 * 1000) refresh();
+  });
+
+  header();
+  inputs.USD.value = fmt(100, 2);
+  render("USD");
+  refresh();
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
+  }
+})();
+</script>
+</body>
+</html>
